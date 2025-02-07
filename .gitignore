@@ -3,6 +3,7 @@
 .factorypath
 .gradle/
 build/
+/build/
 out/
 classes/
 .env
