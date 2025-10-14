@@ -18,6 +18,7 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * @author Carlos Varas Alonso - 31/01/2025 0:12
@@ -85,22 +86,24 @@ public class CommandTree {
   }
 
   private static void give(ServerPlayerEntity player, int amountRewards, String type) {
-    try {
-      List<ItemChance> items = CobbleRandomReward.rewardsConfig.getRewards().get(type);
-      if (items == null) {
-        player.sendMessage(AdventureTranslator.toNative(CobbleRandomReward.language.getInvalidType()), false);
-        return;
-      }
-      if (items.isEmpty()) {
-        player.sendMessage(AdventureTranslator.toNative("Empty type -> " + type), false);
-        return;
-      }
-
-      for (int i = 0; i < amountRewards; i++) {
-        ItemChance.getRewards(items, player, amountRewards);
-      }
-    } catch (Exception e) {
-      e.printStackTrace();
-    }
+    CompletableFuture.runAsync(() -> {
+        List<ItemChance> items = CobbleRandomReward.rewardsConfig.getRewards().get(type);
+        if (items == null) {
+          player.sendMessage(AdventureTranslator.toNative(CobbleRandomReward.language.getInvalidType()), false);
+          return;
+        }
+        if (items.isEmpty()) {
+          player.sendMessage(AdventureTranslator.toNative("Empty type -> " + type), false);
+          return;
+        }
+        var rewards = ItemChance.getRewards(items, player, amountRewards);
+        for (ItemChance reward : rewards) {
+          reward.giveReward(player);
+        }
+      }, CobbleRandomReward.EXECUTOR)
+      .exceptionally(e -> {
+        e.printStackTrace();
+        return null;
+      });
   }
 }

@@ -1,11 +1,15 @@
 package com.kingpixel.cobblerandomreward;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.kingpixel.cobblerandomreward.commands.CommandTree;
 import com.kingpixel.cobblerandomreward.config.Config;
 import com.kingpixel.cobblerandomreward.config.Language;
 import com.kingpixel.cobblerandomreward.config.RewardsConfig;
 import dev.architectury.event.events.common.CommandRegistrationEvent;
 import dev.architectury.event.events.common.LifecycleEvent;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * @author Carlos Varas Alonso - 23/07/2024 9:24
@@ -18,6 +22,9 @@ public class CobbleRandomReward {
   public static Config config = new Config();
   public static Language language = new Language();
   public static RewardsConfig rewardsConfig = new RewardsConfig();
+  public static ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(new ThreadFactoryBuilder()
+    .setNameFormat("CobbleRandomRewards-%d")
+    .build());
 
 
   public static void init() {
