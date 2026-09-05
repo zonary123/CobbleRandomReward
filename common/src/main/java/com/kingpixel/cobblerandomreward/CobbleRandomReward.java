@@ -5,6 +5,8 @@ import com.kingpixel.cobblerandomreward.commands.CommandTree;
 import com.kingpixel.cobblerandomreward.config.Config;
 import com.kingpixel.cobblerandomreward.config.Language;
 import com.kingpixel.cobblerandomreward.config.RewardsConfig;
+import com.kingpixel.cobbleutils.util.async.AsyncContext;
+import java.util.concurrent.TimeUnit;
 import dev.architectury.event.events.common.CommandRegistrationEvent;
 import dev.architectury.event.events.common.LifecycleEvent;
 
@@ -22,9 +24,13 @@ public class CobbleRandomReward {
   public static Config config = new Config();
   public static Language language = new Language();
   public static RewardsConfig rewardsConfig = new RewardsConfig();
-  public static ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(new ThreadFactoryBuilder()
-    .setNameFormat("CobbleRandomRewards-%d")
-    .build());
+  private static final AsyncContext asyncContext = new AsyncContext(MOD_ID, 1, 4, 200, 30, TimeUnit.SECONDS);
+
+  public static AsyncContext getAsyncContext() {
+    return asyncContext;
+  }
+
+  public static ExecutorService EXECUTOR = asyncContext.getExecutor();
 
 
   public static void init() {
