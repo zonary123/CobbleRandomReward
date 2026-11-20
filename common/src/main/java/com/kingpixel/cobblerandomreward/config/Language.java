@@ -6,6 +6,7 @@ import com.kingpixel.cobbleutils.util.Utils;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -17,11 +18,24 @@ public class Language {
   private String prefix;
   private String reload;
   private String invalidType;
+  private String emptyType;
+  private String titlePoolsMenu;
+  private String titlePoolPreviewMenu;
+  private List<String> lorePoolEntry;
 
   public Language() {
     this.prefix = "&7[&6CobbleRandomReward&7] ";
     this.reload = "&aLanguage reloaded";
     this.invalidType = "&cInvalid type";
+    this.emptyType = "&cEmpty type -> %type%";
+    this.titlePoolsMenu = "&6Random Reward Pools";
+    this.titlePoolPreviewMenu = "&6Rewards: &e%type%";
+    this.lorePoolEntry = List.of(
+      "&7Entries: &e%count%",
+      "&7Total Weight: &e%weight%",
+      "",
+      "&eClick to preview rewards!"
+    );
   }
 
   public void init() {

@@ -1,50 +1,127 @@
-name: Publish PR Build
+name: Build, Discord & Modrinth Release
+
 on:
-  workflow_call:
-    inputs:
-      ref:
-        type: string
-        required: true
+  push:
+    tags: ["*"]
 
 env:
-  JAVA_VERSION: 21
-  JAVA_DISTRIBUTION: temurin
+  DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+  MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
-  build:
-    name: Build
+  full-release:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
-      contents: read
-      attestations: write
+      contents: write
+
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref }}
-          fetch-depth: 0
-          fetch-tags: true
-          persist-credentials: false
+
+      - name: Set project info
+        id: set-info
+        run: |
+          TAG="${{ github.ref_name }}"
+          MOD_NAME=$(grep '^mod_name=' gradle.properties | cut -d'=' -f2)
+          MOD_VERSION=$(grep '^mod_version=' gradle.properties | cut -d'=' -f2)
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "MOD_NAME=$MOD_NAME" >> $GITHUB_ENV
+          echo "MOD_VERSION=$MOD_VERSION" >> $GITHUB_ENV
+
       - uses: actions/setup-java@v4
         with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: "21"
+          distribution: "temurin"
+
       - uses: gradle/actions/setup-gradle@v4
+
+      - run: chmod +x ./gradlew
+
+      - uses: actions/cache@v3
         with:
-          build-scan-publish: true
-          build-scan-terms-of-use-url: "https://gradle.com/terms-of-service"
-          build-scan-terms-of-use-agree: "yes"
-      - name: Build
-        # language=bash
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+
+      - name: Build mod
+        run: ./gradlew build remapJar apiJar --no-daemon
+
+      - name: Collect release jars
         run: |
-          ./gradlew clean build -x test
-          shopt -s extglob
-          cp ./!(common)/build/libs/*+!(*-*).jar .
-      - uses: actions/upload-artifact@v4
-        with:
-          name: "minecraft-access"
-          path: "./*.jar"
-      - uses: actions/attest-build-provenance@v1
-        if: github.event_name != 'pull_request'
-        with:
-          subject-path: "./*.jar"
+          mkdir -p release_libs
+          find fabric/build/libs neoforge/build/libs -type f -name "*.jar" ! -name "*-sources.jar" ! -name "*-dev-shadow.jar" ! -name "*-dev.jar" -exec cp {} release_libs/ \;
+          ls -la release_libs/
+          COUNT=$(ls -1 release_libs/*.jar 2>/dev/null | wc -l)
+          if [ "$COUNT" -eq 0 ]; then
+            echo "Error: No release jars found in fabric/build/libs or neoforge/build/libs!"
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        run: |
+          gh release create "$TAG" release_libs/*.jar \
+            --title "Release $TAG" \
+            --notes "Automated release for version $TAG"
+
+      - name: Send Discord Notification with Embed and File
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "DISCORD_WEBHOOK_URL not configured, skipping Discord notification."
+            exit 0
+          fi
+
+          # Extraer changelog
+          BASE=$(echo "$TAG" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          CHANGELOG_CONTENT=$(tr -d '\r' < CHANGELOG.md | awk -v ver="$BASE" '
+            $0 ~ "## \\[" ver "\\]" {flag=1; next}
+            /^## \[/ && flag {flag=0}
+            flag {print}
+          ')
+
+          # Fallback si el changelog extraído está vacío
+          if [ -z "$CHANGELOG_CONTENT" ]; then
+            CHANGELOG_CONTENT="Automated release for version $TAG"
+          fi
+
+          mkdir -p build
+          CHANGELOG_FILE="build/changelog_${TAG}.txt"
+          CHANGELOG_LEN=${#CHANGELOG_CONTENT}
+          HAS_CHANGELOG_FILE=false
+
+          # Discord embed description limit: 4096 caracteres
+          if [ "$CHANGELOG_LEN" -gt 3800 ]; then
+            printf "%s\n" "$CHANGELOG_CONTENT" > "$CHANGELOG_FILE"
+            TRUNCATED=$(printf "%s" "$CHANGELOG_CONTENT" | head -c 3500)
+            EMBED_DESC=$(printf "%s\n\n📄 **Full changelog attached as a file...**" "$TRUNCATED")
+            HAS_CHANGELOG_FILE=true
+          else
+            EMBED_DESC="$CHANGELOG_CONTENT"
+          fi
+
+          # Generar JSON embed correctamente escapado
+          JSON_PAYLOAD=$(jq -nc --arg tag "$TAG" --arg changelog "$EMBED_DESC" \
+            '{content: "@everyone 🎉 New Release!", embeds:[{title:("Release "+$tag), description:$changelog, color:3066993}]}')
+
+          echo "Embed JSON:"
+          echo "$JSON_PAYLOAD"
+
+          # 1️⃣ Enviar primero el embed
+          curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "$JSON_PAYLOAD"
+
+          # 2️⃣ Si el changelog es extenso, enviar el archivo de texto
+          if [ "$HAS_CHANGELOG_FILE" = true ] && [ -f "$CHANGELOG_FILE" ]; then
+            curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+              -F "file=@${CHANGELOG_FILE}"
+          fi
+
+          # 3️⃣ Enviar después los archivos .jar (Fabric, NeoForge y API)
+          for FILE in release_libs/*.jar; do
+            if [ -f "$FILE" ]; then
+              echo "Uploading $FILE to Discord..."
+              curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+                -F "file=@${FILE}"
+            fi
+          done

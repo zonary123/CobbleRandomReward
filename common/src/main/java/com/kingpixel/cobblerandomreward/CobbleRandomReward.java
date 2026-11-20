@@ -1,17 +1,17 @@
 package com.kingpixel.cobblerandomreward;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.kingpixel.cobblerandomreward.commands.CommandTree;
 import com.kingpixel.cobblerandomreward.config.Config;
 import com.kingpixel.cobblerandomreward.config.Language;
 import com.kingpixel.cobblerandomreward.config.RewardsConfig;
+import com.kingpixel.cobbleutils.util.UtilsFile;
 import com.kingpixel.cobbleutils.util.async.AsyncContext;
-import java.util.concurrent.TimeUnit;
 import dev.architectury.event.events.common.CommandRegistrationEvent;
 import dev.architectury.event.events.common.LifecycleEvent;
 
+import java.nio.file.Path;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author Carlos Varas Alonso - 23/07/2024 9:24
@@ -43,6 +43,7 @@ public class CobbleRandomReward {
   }
 
   private static void files() {
+    UtilsFile.extractWiki(CobbleRandomReward.class, Path.of("config", MOD_ID));
     config.init();
     language.init();
     rewardsConfig.init();

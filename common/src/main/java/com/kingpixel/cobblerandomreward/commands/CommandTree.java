@@ -1,11 +1,10 @@
 package com.kingpixel.cobblerandomreward.commands;
 
 import com.kingpixel.cobblerandomreward.CobbleRandomReward;
-import com.kingpixel.cobblerandomreward.config.OldConfig;
+import com.kingpixel.cobblerandomreward.api.ui.RandomRewardMenuRegistry;
+import com.kingpixel.cobblerandomreward.application.RandomRewardActionService;
 import com.kingpixel.cobbleutils.CobbleUtils;
-import com.kingpixel.cobbleutils.Model.ItemChance;
 import com.kingpixel.cobbleutils.api.PermissionApi;
-import com.kingpixel.cobbleutils.util.AdventureTranslator;
 import com.kingpixel.cobbleutils.util.PlayerUtils;
 import com.kingpixel.cobbleutils.util.TypeMessage;
 import com.mojang.brigadier.CommandDispatcher;
@@ -18,7 +17,6 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * @author Carlos Varas Alonso - 31/01/2025 0:12
@@ -28,7 +26,13 @@ public class CommandTree {
     for (String command : CobbleRandomReward.config.getCommands()) {
       var base = CommandManager.literal(command)
         .requires(source -> PermissionApi.hasPermission(source, List.of("cobblerandomreward.admin"),
-          4));
+          4))
+        .executes(context -> {
+          if (context.getSource().isExecutedByPlayer()) {
+            RandomRewardMenuRegistry.openMainMenu(context.getSource().getPlayer());
+          }
+          return 1;
+        });
 
       dispatcher.register(base
         .then(
@@ -51,10 +55,28 @@ public class CommandTree {
         .then(
           CommandManager.literal("migrate")
             .executes(context -> {
-              OldConfig.init();
-              CobbleRandomReward.load();
+              RandomRewardActionService.getInstance().migrateLegacyConfigs();
               return 1;
             })
+        )
+        .then(
+          CommandManager.literal("preview")
+            .then(
+              CommandManager.argument("type", StringArgumentType.string())
+                .suggests((context, builder) -> {
+                  for (String type : CobbleRandomReward.rewardsConfig.getRewards().keySet()) {
+                    builder.suggest(type);
+                  }
+                  return builder.buildFuture();
+                })
+                .executes(context -> {
+                  if (context.getSource().isExecutedByPlayer()) {
+                    String type = StringArgumentType.getString(context, "type");
+                    RandomRewardMenuRegistry.openRewardPoolPreviewMenu(context.getSource().getPlayer(), type);
+                  }
+                  return 1;
+                })
+            )
         )
         .then(
           CommandManager.literal("give")
@@ -86,24 +108,6 @@ public class CommandTree {
   }
 
   private static void give(ServerPlayerEntity player, int amountRewards, String type) {
-    CompletableFuture.runAsync(() -> {
-        List<ItemChance> items = CobbleRandomReward.rewardsConfig.getRewards().get(type);
-        if (items == null) {
-          player.sendMessage(AdventureTranslator.toNative(CobbleRandomReward.language.getInvalidType()), false);
-          return;
-        }
-        if (items.isEmpty()) {
-          player.sendMessage(AdventureTranslator.toNative("Empty type -> " + type), false);
-          return;
-        }
-        var rewards = ItemChance.getRewards(items, player, amountRewards);
-        for (ItemChance reward : rewards) {
-          reward.giveReward(player);
-        }
-      }, CobbleRandomReward.EXECUTOR)
-      .exceptionally(e -> {
-        e.printStackTrace();
-        return null;
-      });
+    RandomRewardActionService.getInstance().rollAndGiveRewards(player, type, amountRewards, true);
   }
 }

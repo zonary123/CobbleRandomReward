@@ -112,3 +112,34 @@ components.java {
         skip()
     }
 }
+
+tasks.register("apiJar", Jar) {
+    archiveClassifier.set("api")
+    from(project(":common").sourceSets.main.output) {
+        include "com/kingpixel/cobblerandomreward/api/**"
+        include "com/kingpixel/cobblerandomreward/application/**"
+        include "com/kingpixel/cobblerandomreward/models/**"
+    }
+}
+
+tasks.named("build") {
+    dependsOn tasks.named("apiJar")
+}
+
+tasks.named("assemble") {
+    dependsOn tasks.named("apiJar")
+}
+
+artifacts {
+    archives apiJar
+}
+
+publishing {
+    publications {
+        create("mavenFabric", MavenPublication) {
+            artifactId = project.archivesBaseName
+            from components.java
+            artifact tasks.named("apiJar")
+        }
+    }
+}
